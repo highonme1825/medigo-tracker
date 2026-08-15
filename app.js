@@ -16,7 +16,7 @@ const supabaseClient = window.supabase ? window.supabase.createClient(SUPABASE_U
 // 공유 비밀번호(패스코드) 게이트 - 평문 대신 SHA-256 해시로 비교한다.
 // 비밀번호를 바꾸려면: 새 비밀번호의 SHA-256 해시값으로 아래 상수만 교체하면 된다.
 const PASSCODE_OK_KEY = 'medigo_naver_tracker_passcode_ok';
-const APP_PASSCODE_HASH = '17efc7c802ac85a5bf45e715e51f25706b882319d46555588904ef9104732bfa'; // "tracker2026"
+const APP_PASSCODE_HASH = '0be057bbbdf7ad63295016eb691feb8c21a364073267de09503eb04b954d522e'; // "1825"
 
 async function sha256Hex(str) {
   const enc = new TextEncoder().encode(str);
