@@ -788,6 +788,9 @@ function renderDeadlineSummary(hospital, year, month) {
     <button type="button" class="primary-btn auto-assign-btn" data-action="auto-assign-mondays" title="목표 수량에 맞춰 월요일 마감일로 자동 균등 배정합니다">
       🎯 월요일 마감 자동 배정
     </button>
+    <button type="button" class="${hospital.autoAssignPaused ? 'primary-btn' : 'ghost-btn'} pause-toggle-btn" data-action="toggle-auto-assign-pause" data-id="${hospital.id}" title="${hospital.autoAssignPaused ? '누르면 다시 자동 배정 대상에 포함됩니다' : '누르면 기존 기록은 그대로 두고 새 자동 배정만 건너뜁니다'}">
+      ${hospital.autoAssignPaused ? '▶ 배정 재개' : '⏸ 일시정지'}
+    </button>
   </div>`;
 }
 
@@ -1964,6 +1967,15 @@ function onAppClick(e) {
     case 'auto-assign-all-mondays': {
       if (confirm(`모든 병원의 목표 수량을 이번달(달력 월) 기준으로 월요일 마감일에 골고루 자동 배정하시겠습니까? (자동 배정 일시중지된 병원은 제외됩니다)`)) {
         autoAssignAllHospitalsMondays(state.year, state.month);
+      }
+      break;
+    }
+    case 'toggle-auto-assign-pause': {
+      const h = getHospital(id);
+      if (h) {
+        h.autoAssignPaused = !h.autoAssignPaused;
+        saveData();
+        render();
       }
       break;
     }
