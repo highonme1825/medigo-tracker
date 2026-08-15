@@ -100,6 +100,9 @@ const TYPE_META = {
   receipt:   { label: '영수증 리뷰',    short: '영수증', color: 'var(--series-3)' },
 };
 const TYPE_KEYS = Object.keys(TYPE_META);
+// 목표 수량 입력칸의 상한 - 오타로 큰 숫자가 들어가 자동 배정이 수만 건씩
+// 생성되며 브라우저가 멈추는 사고를 막기 위한 안전장치.
+const MAX_QUOTA_PER_TYPE = 200;
 const STATUS_LIST = ['시작 전', '원고 준비', '메일 준비', '예약 발행', '요청 완료', '발행', '보고 완료'];
 const DOW_LABELS = ['일', '월', '화', '수', '목', '금', '토'];
 
@@ -472,7 +475,9 @@ function assignQuotaEvenlyForMonth(hospital, year, month) {
   let moved = 0;
 
   TYPE_KEYS.forEach((type) => {
-    const target = Number(quota[type]) || 0;
+    // 목표 수량 입력 실수(예: 자릿수 오타)로 수만~수백만 건이 생성되며 브라우저가
+    // 멈추는 사고를 막기 위해 한 달에 타입당 생성 가능한 상한을 둔다.
+    const target = Math.min(MAX_QUOTA_PER_TYPE, Number(quota[type]) || 0);
     const typeTasks = currentTasks.filter((t) => t.type === type);
     const completed = typeTasks.filter((t) => isPublishedStatus(t.status));
     const pending = typeTasks.filter((t) => !isPublishedStatus(t.status));
@@ -1359,9 +1364,9 @@ function hospitalFormHtml(hospital) {
       <input type="text" name="name" required value="${isEdit ? esc(hospital.name) : ''}">
     </label>
     <div class="form-row-3">
-      <label>브랜드 블로그 목표<input type="number" name="brandBlog" min="0" value="${q.brandBlog}"></label>
-      <label>기자단 목표<input type="number" name="press" min="0" value="${q.press}"></label>
-      <label>영수증 리뷰 목표<input type="number" name="receipt" min="0" value="${q.receipt}"></label>
+      <label>브랜드 블로그 목표<input type="number" name="brandBlog" min="0" max="${MAX_QUOTA_PER_TYPE}" value="${q.brandBlog}"></label>
+      <label>기자단 목표<input type="number" name="press" min="0" max="${MAX_QUOTA_PER_TYPE}" value="${q.press}"></label>
+      <label>영수증 리뷰 목표<input type="number" name="receipt" min="0" max="${MAX_QUOTA_PER_TYPE}" value="${q.receipt}"></label>
     </div>
     <label>정산(발행) 시작일
       <input type="number" name="cycleStartDay" min="1" max="31" value="${isEdit ? (hospital.cycleStartDay || 1) : 1}">
@@ -1458,9 +1463,9 @@ function quotaFormHtml(hospital, ymKey) {
   return `
   <h3>${cycleLabel(hospital, state.year, state.month)} 할당량 수정</h3>
   <form id="quotaForm">
-    <label>브랜드 블로그 목표<input type="number" name="brandBlog" min="0" value="${Number(quota.brandBlog) || 0}"></label>
-    <label>기자단 목표<input type="number" name="press" min="0" value="${Number(quota.press) || 0}"></label>
-    <label>영수증 리뷰 목표<input type="number" name="receipt" min="0" value="${Number(quota.receipt) || 0}"></label>
+    <label>브랜드 블로그 목표<input type="number" name="brandBlog" min="0" max="${MAX_QUOTA_PER_TYPE}" value="${Number(quota.brandBlog) || 0}"></label>
+    <label>기자단 목표<input type="number" name="press" min="0" max="${MAX_QUOTA_PER_TYPE}" value="${Number(quota.press) || 0}"></label>
+    <label>영수증 리뷰 목표<input type="number" name="receipt" min="0" max="${MAX_QUOTA_PER_TYPE}" value="${Number(quota.receipt) || 0}"></label>
     <div class="modal-actions">
       ${hasOverride ? `<button type="button" class="ghost-btn" id="resetQuotaBtn">기본값으로 초기화</button>` : `<span></span>`}
       <div class="modal-actions-right">
