@@ -353,20 +353,43 @@ async function pushRemoteState(data) {
   }
 }
 
-// 앱 시작 시 1회: Supabase에 이미 데이터가 있으면 그걸 기준으로(다른 기기와 동일한 상태로) 시작하고,
-// Supabase가 비어있는데 이 기기의 localStorage에 기존 데이터가 있으면 그걸 Supabase로 최초 업로드한다.
+// 앱 시작 시 1회: 로컬과 원격을 모두 읽어서 비교한 뒤,
+// 한쪽이 비어있으면 있는 쪽을 쓰고, 둘 다 있는데 내용이 다르면
+// 절대 조용히 덮어쓰지 않고 사용자에게 직접 어느 쪽을 쓸지 물어본다.
+// (예전에는 원격이 있으면 무조건 원격으로 로컬을 덮어써서 실제 작업 데이터가
+//  테스트용 샘플 데이터에 지워지는 사고가 있었음 - 다시는 이런 일이 없도록 함)
 async function loadInitialData() {
   const remote = await fetchRemoteData();
-  if (remote) {
+  const local = loadLocalData();
+
+  if (!remote) {
+    const base = local || { hospitals: INITIAL_HOSPITALS, quotaOverrides: {}, tasks: INITIAL_TASKS, tagPool: [] };
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(base));
+    pushRemoteState(base);
+    return base;
+  }
+
+  if (!local) {
     localStorage.setItem(STORAGE_KEY, JSON.stringify(remote));
     return remote;
   }
 
-  const local = loadLocalData();
-  const base = local || { hospitals: INITIAL_HOSPITALS, quotaOverrides: {}, tasks: INITIAL_TASKS, tagPool: [] };
-  localStorage.setItem(STORAGE_KEY, JSON.stringify(base));
-  pushRemoteState(base);
-  return base;
+  if (JSON.stringify(local) === JSON.stringify(remote)) {
+    return remote;
+  }
+
+  const useRemote = confirm(
+    '이 기기에 저장된 데이터와 클라우드에 저장된 데이터가 서로 다릅니다.\n\n' +
+    '[확인] = 클라우드 데이터를 사용 (이 기기의 데이터는 클라우드 내용으로 바뀝니다)\n' +
+    '[취소] = 이 기기의 데이터를 사용 (클라우드가 이 기기 내용으로 바뀝니다)\n\n' +
+    '어느 쪽이 최신/정확한 데이터인지 확실하지 않다면 먼저 [취소]를 누르고 "내보내기"로 양쪽을 백업해두는 걸 권장합니다.'
+  );
+  if (useRemote) {
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(remote));
+    return remote;
+  }
+  pushRemoteState(local);
+  return local;
 }
 
 let lastSyncedUpdatedAt = null;
