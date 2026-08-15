@@ -442,7 +442,8 @@ function assignQuotaEvenlyForMonth(hospital, year, month) {
   let added = 0;
   let moved = 0;
 
-  TYPE_KEYS.forEach((type) => {
+  // 목표 수량만큼 부족한 대기중 작업을 새로 만들고, 완료/대기 목록을 반환한다.
+  function ensurePendingList(type) {
     // 목표 수량 입력 실수(예: 자릿수 오타)로 수만~수백만 건이 생성되며 브라우저가
     // 멈추는 사고를 막기 위해 한 달에 타입당 생성 가능한 상한을 둔다.
     const target = Math.min(MAX_QUOTA_PER_TYPE, Number(quota[type]) || 0);
@@ -470,25 +471,51 @@ function assignQuotaEvenlyForMonth(hospital, year, month) {
       pending.push(newTask);
       added++;
     }
+    return { completed, pending };
+  }
 
-    // 완료된 작업이 이미 차지하고 있는 주차를 반영해 주차별 현재 배정 건수를 센다
+  // groups(여러 타입의 {completed, pending} 묶음)를 "주차별 배정 건수"를 공유해가며 채운다.
+  // group이 1개면 기존과 동일한 단일 타입 균등 배정이고, 2개 이상이면 각 그룹에서
+  // 한 건씩 번갈아 꺼내 배치하므로(교차 배정) 같은 주에 여러 타입이 몰리지 않고
+  // 타입별로 주차가 번갈아가며 채워진다.
+  function placeEvenly(groups) {
     const countPerWeek = mondays.map(() => 0);
-    completed.forEach((t) => {
-      const idx = mondays.indexOf(toMondayStr(t.deadline));
-      if (idx >= 0) countPerWeek[idx] += 1;
+    groups.forEach(({ completed }) => {
+      completed.forEach((t) => {
+        const idx = mondays.indexOf(toMondayStr(t.deadline));
+        if (idx >= 0) countPerWeek[idx] += 1;
+      });
     });
 
-    pending.forEach((task) => {
-      let minIdx = 0;
-      for (let i = 1; i < countPerWeek.length; i++) {
-        if (countPerWeek[i] < countPerWeek[minIdx]) minIdx = i;
-      }
-      const newDeadline = mondays[minIdx];
-      if (task.deadline !== newDeadline) moved++;
-      task.deadline = newDeadline;
-      countPerWeek[minIdx] += 1;
+    const queues = groups.map((g) => g.pending.slice());
+    let hasMore = true;
+    while (hasMore) {
+      hasMore = false;
+      queues.forEach((queue) => {
+        const task = queue.shift();
+        if (!task) return;
+        hasMore = true;
+        let minIdx = 0;
+        for (let i = 1; i < countPerWeek.length; i++) {
+          if (countPerWeek[i] < countPerWeek[minIdx]) minIdx = i;
+        }
+        const newDeadline = mondays[minIdx];
+        if (task.deadline !== newDeadline) moved++;
+        task.deadline = newDeadline;
+        countPerWeek[minIdx] += 1;
+      });
+    }
+  }
+
+  if (hospital.interleaveTypes) {
+    // 브랜드 블로그 / 기자단은 같은 주에 몰리지 않도록 교차 배정, 영수증은 독립적으로 배정
+    placeEvenly([ensurePendingList('brandBlog'), ensurePendingList('press')]);
+    placeEvenly([ensurePendingList('receipt')]);
+  } else {
+    TYPE_KEYS.forEach((type) => {
+      placeEvenly([ensurePendingList(type)]);
     });
-  });
+  }
 
   return { added, moved, paused: false };
 }
@@ -1349,6 +1376,11 @@ function hospitalFormHtml(hospital) {
       자동 배정 일시중지 (기존 기록은 유지, 새로 자동 배정만 하지 않음)
     </label>
     <p class="helper-text">체크하면 "마감 자동 배정" 버튼을 눌러도 이 병원은 건너뜁니다. 수동으로 "+ 작업 추가"하는 건 그대로 가능합니다.</p>
+    <label class="checkbox-row">
+      <input type="checkbox" name="interleaveTypes" ${isEdit && hospital.interleaveTypes ? 'checked' : ''}>
+      브랜드 블로그 / 기자단 교차 배정
+    </label>
+    <p class="helper-text">체크하면 같은 주에 브랜드 블로그와 기자단이 같이 몰리지 않고, 주차마다 번갈아가며 배정됩니다 (예: 1주차 브랜드, 2주차 기자단, 3주차 브랜드...). 영수증 리뷰는 영향받지 않습니다.</p>
     <label>네이버 블로그 아이디
       <input type="text" name="naverId" value="${isEdit ? esc(hospital.naverId || '') : ''}">
     </label>
@@ -1399,6 +1431,7 @@ function openHospitalForm(hospital) {
     const naverMapUrl = normalizeUrl(String(fd.get('naverMapUrl') || ''));
     const cycleStartDay = Math.min(31, Math.max(1, Number(fd.get('cycleStartDay')) || 1));
     const autoAssignPaused = fd.get('autoAssignPaused') === 'on';
+    const interleaveTypes = fd.get('interleaveTypes') === 'on';
     if (hospital) {
       hospital.name = name;
       hospital.defaultQuota = defaultQuota;
@@ -1408,9 +1441,10 @@ function openHospitalForm(hospital) {
       hospital.naverMapUrl = naverMapUrl;
       hospital.cycleStartDay = cycleStartDay;
       hospital.autoAssignPaused = autoAssignPaused;
+      hospital.interleaveTypes = interleaveTypes;
     } else {
       db.hospitals.push({
-        id: uuid(), name, defaultQuota, naverId, naverPassword, naverBlogUrl, naverMapUrl, cycleStartDay, autoAssignPaused, createdAt: TODAY_STR,
+        id: uuid(), name, defaultQuota, naverId, naverPassword, naverBlogUrl, naverMapUrl, cycleStartDay, autoAssignPaused, interleaveTypes, createdAt: TODAY_STR,
       });
     }
     saveData();
