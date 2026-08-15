@@ -273,34 +273,15 @@ function migrateTask(t) {
   return t;
 }
 
-function syncHospitalQuotas(hospitals) {
-  const exactQuotas = {
-    'h-gangnam': { brandBlog: 2, press: 2, receipt: 4 },
-    'h-junghankyo': { brandBlog: 5, press: 6, receipt: 4 },
-    'h-gibaek': { brandBlog: 5, press: 3, receipt: 4 },
-    'h-simpyeonhan': { brandBlog: 4, press: 4, receipt: 2 },
-  };
-
-  return hospitals.map((h) => {
-    if (exactQuotas[h.id]) {
-      h.defaultQuota = exactQuotas[h.id];
-    }
-    return h;
-  });
-}
-
-// parsed(로컬 or 원격에서 막 읽어온 원시 데이터)를 검증/마이그레이션해서 항상 유효한 db 형태로 만든다.
+// parsed(로컬 or 원격에서 막 읽어온 원시 데이터)를 안전한 db 형태로 만든다.
+// 예전에는 여기서 "병원 4곳 미만이면 데모로 대체", "작업 0건이면 데모로 대체",
+// "빈 키워드/시작전 상태의 새 작업은 쓰레기로 간주해 삭제" 하는 1회성 마이그레이션
+// 로직이 있었는데, 이게 실시간 동기화 경로(다른 기기 반영, echo 처리)에서도 매번
+// 실행되면서 방금 자동배정으로 막 만든 정상 작업(키워드 없음+시작 전 상태라 조건이
+// 똑같음)까지 계속 지워버리는 사고를 냈다. 이제는 타입만 검증하고 내용은 손대지 않는다.
 function normalizeLoadedData(parsed) {
-  let hospitals = Array.isArray(parsed.hospitals) && parsed.hospitals.length >= 4
-    ? syncHospitalQuotas(parsed.hospitals)
-    : INITIAL_HOSPITALS;
-
-  let tasks = Array.isArray(parsed.tasks) ? cleanGhostTasks(parsed.tasks.map(migrateTask)) : [];
-
-  if (tasks.length === 0) {
-    tasks = INITIAL_TASKS;
-    hospitals = INITIAL_HOSPITALS;
-  }
+  const hospitals = Array.isArray(parsed.hospitals) ? parsed.hospitals : [];
+  const tasks = Array.isArray(parsed.tasks) ? parsed.tasks.map(migrateTask) : [];
 
   return {
     hospitals,
@@ -442,19 +423,6 @@ function getMondaysInMonth(year, month) {
     }
   }
   return mondays;
-}
-
-function cleanGhostTasks(tasks) {
-  // 스크린샷 원본 70건 (t-1 ~ t-70) 및 사용자가 실제 입력(키워드/마감일 있음)한 작업만 유지하고,
-  // 자동 배정으로 무더기 생성된 키워드 없는 더미 작업(id가 'id-'로 시작하고 키워드/발행일 없음)을 정돈
-  return tasks.filter((t) => {
-    if (t.id && t.id.startsWith('t-')) return true; // 원본 스크린샷 데이터
-    // 직접 추가한 데이터 중 키워드나 마감일이 있는 유효 데이터
-    if (t.keyword && t.keyword.trim()) return true;
-    if (t.publishedDate) return true;
-    if (t.status && t.status !== '시작 전') return true;
-    return false;
-  });
 }
 
 // 이미 발행 완료된 작업은 지나간 기록이므로 마감일을 건드리지 않는다.
