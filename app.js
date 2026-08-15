@@ -456,15 +456,18 @@ function cleanGhostTasks(tasks) {
 
 // 이미 발행 완료된 작업은 지나간 기록이므로 마감일을 건드리지 않는다.
 // 목표 수량에서 부족한 만큼 새 작업(대기중)을 만든 뒤, 아직 발행 전인 작업들을
-// "현재 배정 건수가 가장 적은 주"부터 순서대로 채워 넣어 총량이 이번 주기의
+// "현재 배정 건수가 가장 적은 주"부터 순서대로 채워 넣어 총량이 이번 달(달력 월)
 // 월요일들에 최대한 고르게(최대-최소 차이 1건 이하) 맞춰지도록 한다.
-function assignQuotaEvenlyForCycle(hospital, year, month) {
+// 정산 주기(cycleStartDay)는 무시하고 항상 달력 월(1일~말일) 기준으로 채운다.
+function assignQuotaEvenlyForMonth(hospital, year, month) {
+  if (hospital.autoAssignPaused) return { added: 0, moved: 0, paused: true };
+
   const ymKey = monthKey(year, month);
   const quota = getEffectiveQuota(hospital, ymKey);
-  const mondays = getMondaysInCycle(hospital, year, month);
-  if (mondays.length === 0) return { added: 0, moved: 0 };
+  const mondays = getMondaysInMonth(year, month).map(fmtDateStr);
+  if (mondays.length === 0) return { added: 0, moved: 0, paused: false };
 
-  const currentTasks = getTasksForCycle(hospital, year, month);
+  const currentTasks = db.tasks.filter((t) => t.hospitalId === hospital.id && t.deadline && t.deadline.startsWith(ymKey));
   let added = 0;
   let moved = 0;
 
@@ -514,38 +517,32 @@ function assignQuotaEvenlyForCycle(hospital, year, month) {
     });
   });
 
-  return { added, moved };
+  return { added, moved, paused: false };
 }
 
 function autoAssignMondays(hospital, year, month) {
-  const { added, moved } = assignQuotaEvenlyForCycle(hospital, year, month);
+  const { added, moved, paused } = assignQuotaEvenlyForMonth(hospital, year, month);
+  if (paused) {
+    alert(`"${hospital.name}" 병원은 자동 배정이 일시중지된 상태입니다. "병원 정보 수정"에서 재개할 수 있어요.`);
+    return;
+  }
   saveData();
   render();
   if (added > 0 || moved > 0) {
-    alert(`"${hospital.name}" 병원의 ${month}월 주기 목표 수량에 맞춰 신규 ${added}건 생성, ${moved}건 재배치하여 월요일 마감일에 고르게 배정했습니다!`);
+    alert(`"${hospital.name}" 병원의 ${month}월 목표 수량에 맞춰 신규 ${added}건 생성, ${moved}건 재배치하여 월요일 마감일에 고르게 배정했습니다!`);
   } else {
-    alert(`"${hospital.name}" 병원의 ${month}월 주기는 이미 고르게 배정되어 있습니다.`);
+    alert(`"${hospital.name}" 병원의 ${month}월은 이미 고르게 배정되어 있습니다.`);
   }
-}
-
-// 홈 화면의 월요일 마감 보드는 달력 월(year, month) 단위로 이동하지만,
-// 병원마다 정산 시작일(cycleStartDay)이 다르면 "달력상 이 달"과 "이 병원의 실제 정산 주기"가 어긋난다.
-// (예: 오늘 8/9, 정산일 20일 병원의 실제 주기는 7/20~8/19인데 보드는 기본으로 8월을 보여줌)
-// 따라서 자동 배정 시에는 달력 월을 그대로 쓰지 않고, 병원별로 해당 달력 월에 걸리는
-// 실제 정산 주기의 시작월을 다시 계산해서 사용한다.
-function resolveHospitalCycleAnchor(hospital, year, month) {
-  const isCurrentCalendarMonth = year === today.getFullYear() && month === (today.getMonth() + 1);
-  const refDate = isCurrentCalendarMonth ? today : new Date(year, month - 1, 15);
-  return getCurrentCycleAnchor(hospital, refDate);
 }
 
 function autoAssignAllHospitalsMondays(year, month) {
   let totalAdded = 0;
   let totalMoved = 0;
+  let pausedCount = 0;
 
   db.hospitals.forEach((hospital) => {
-    const anchor = resolveHospitalCycleAnchor(hospital, year, month);
-    const { added, moved } = assignQuotaEvenlyForCycle(hospital, anchor.year, anchor.month);
+    const { added, moved, paused } = assignQuotaEvenlyForMonth(hospital, year, month);
+    if (paused) { pausedCount += 1; return; }
     totalAdded += added;
     totalMoved += moved;
   });
@@ -553,10 +550,11 @@ function autoAssignAllHospitalsMondays(year, month) {
   saveData();
   render();
 
+  const pausedNote = pausedCount > 0 ? ` (자동 배정 일시중지된 병원 ${pausedCount}곳은 제외)` : '';
   if (totalAdded > 0 || totalMoved > 0) {
-    alert(`각 병원별 정산 주기(정산일 기준 이번 주기) 목표 수량에 맞춰 신규 ${totalAdded}건 생성, ${totalMoved}건 재배치하여 월요일 마감일에 고르게 배정했습니다!`);
+    alert(`${year}년 ${month}월 목표 수량에 맞춰 총 ${totalAdded}건 생성, ${totalMoved}건 재배치하여 월요일 마감일에 고르게 배정했습니다!${pausedNote}`);
   } else {
-    alert(`각 병원별 이번 정산 주기가 이미 고르게 배정되어 있습니다.`);
+    alert(`${year}년 ${month}월은 이미 모든 병원이 고르게 배정되어 있습니다.${pausedNote}`);
   }
 }
 
@@ -652,13 +650,13 @@ function renderMondayBoard() {
         <span class="monday-stat-badge">마감 <strong>${totalTasks}건</strong></span>
         <span class="monday-stat-badge">· 진행 <strong>${pendingTasks}건</strong></span>
         <span class="monday-stat-badge">· 완료 <strong>${completedTasks}건</strong></span>
-        <button type="button" class="primary-btn auto-assign-all-btn" data-action="auto-assign-all-mondays" title="각 병원의 정산 주기(정산일~다음 정산일)에 맞춰 마감 수량을 월요일 마감일로 자동 배정합니다">
-          🎯 정산 주기 마감 자동 배정
+        <button type="button" class="primary-btn auto-assign-all-btn" data-action="auto-assign-all-mondays" title="이번달(달력 월) 목표 수량에 맞춰 마감 수량을 월요일 마감일로 자동 배정합니다">
+          🎯 이번달 마감 자동 배정
         </button>
       </div>
     </div>
     <div class="monday-board-scroll">
-      <div class="week-matrix" style="grid-template-columns: 132px repeat(${mondays.length}, minmax(78px, 1fr));">
+      <div class="week-matrix" style="grid-template-columns: var(--week-corner-w, 132px) repeat(${mondays.length}, minmax(var(--week-col-min, 78px), 1fr));">
         <div class="week-corner">병원 \\ 주차</div>
         ${headerCellsHtml}
         ${rowsHtml}
@@ -723,7 +721,7 @@ function renderHeader() {
 
 function renderTabStrip() {
   const pills = db.hospitals.map((h) => `
-    <button class="tab-pill ${h.id === state.hospitalId ? 'active' : ''}" data-action="switch-hospital" data-id="${h.id}">${esc(h.name)}</button>
+    <button class="tab-pill ${h.id === state.hospitalId ? 'active' : ''}" data-action="switch-hospital" data-id="${h.id}">${esc(h.name)}${h.autoAssignPaused ? ' ⏸' : ''}</button>
   `).join('');
   return `
   <div class="tab-strip">
@@ -1097,6 +1095,7 @@ function renderTaskRow(task) {
     <td>${volumeCell}</td>
     <td>${docsCell}</td>
     <td>${compCell}</td>
+    <td><input type="text" class="cell-input performance-input" data-field="performance" placeholder="예: 블로그탭 1위" value="${esc(task.performance || '')}"></td>
   </tr>`;
 }
 
@@ -1141,6 +1140,7 @@ function renderTrackerSection(hospital, year, month) {
             <th>검색량</th>
             <th>발행량</th>
             <th>경쟁도</th>
+            <th>성과</th>
           </tr>
         </thead>
         <tbody id="trackerTbody">
@@ -1293,6 +1293,7 @@ function renderDetailView() {
     <div>
       <div class="detail-title-row">
         <div class="detail-title">${esc(hospital.name)}</div>
+        ${hospital.autoAssignPaused ? `<span class="paused-badge" title="자동 배정이 일시중지되어 있습니다">일시중지</span>` : ''}
         <button class="icon-btn" data-action="edit-hospital" data-id="${hospital.id}" title="병원 정보 수정">⚙</button>
       </div>
       ${renderCreds(hospital)}
@@ -1365,7 +1366,12 @@ function hospitalFormHtml(hospital) {
     <label>정산(발행) 시작일
       <input type="number" name="cycleStartDay" min="1" max="31" value="${isEdit ? (hospital.cycleStartDay || 1) : 1}">
     </label>
-    <p class="helper-text">예: 25로 설정하면 매월 25일부터 다음달 24일까지를 한 주기(한달 단위)로 계산합니다. 기본값 1은 일반 달력 월(1일~말일)입니다.</p>
+    <p class="helper-text">예: 25로 설정하면 매월 25일부터 다음달 24일까지를 한 주기(한달 단위)로 계산합니다. 기본값 1은 일반 달력 월(1일~말일)입니다. (단, "마감 자동 배정" 버튼은 이 설정과 무관하게 항상 달력 월 기준으로 채웁니다.)</p>
+    <label class="checkbox-row">
+      <input type="checkbox" name="autoAssignPaused" ${isEdit && hospital.autoAssignPaused ? 'checked' : ''}>
+      자동 배정 일시중지 (기존 기록은 유지, 새로 자동 배정만 하지 않음)
+    </label>
+    <p class="helper-text">체크하면 "마감 자동 배정" 버튼을 눌러도 이 병원은 건너뜁니다. 수동으로 "+ 작업 추가"하는 건 그대로 가능합니다.</p>
     <label>네이버 블로그 아이디
       <input type="text" name="naverId" value="${isEdit ? esc(hospital.naverId || '') : ''}">
     </label>
@@ -1375,7 +1381,7 @@ function hospitalFormHtml(hospital) {
         <button type="button" class="ghost-btn" id="togglePwBtn">보기</button>
       </div>
     </label>
-    <p class="helper-text">비밀번호는 이 브라우저의 로컬 저장소에만 저장되며 외부로 전송되지 않습니다. 공용 컴퓨터에서는 사용에 주의하세요.</p>
+    <p class="helper-text">비밀번호는 이 트래커의 공유 클라우드 저장소(Supabase)에 평문으로 저장됩니다. 접속 비밀번호를 아는 사람은 누구나 볼 수 있으니 공용 컴퓨터/타인과 공유 시 주의하세요.</p>
     <div class="form-row-2">
       <label>네이버 블로그 주소<input type="text" name="naverBlogUrl" placeholder="blog.naver.com/..." value="${isEdit ? esc(hospital.naverBlogUrl || '') : ''}"></label>
       <label>네이버 지도 주소<input type="text" name="naverMapUrl" placeholder="map.naver.com/..." value="${isEdit ? esc(hospital.naverMapUrl || '') : ''}"></label>
@@ -1415,6 +1421,7 @@ function openHospitalForm(hospital) {
     const naverBlogUrl = normalizeUrl(String(fd.get('naverBlogUrl') || ''));
     const naverMapUrl = normalizeUrl(String(fd.get('naverMapUrl') || ''));
     const cycleStartDay = Math.min(31, Math.max(1, Number(fd.get('cycleStartDay')) || 1));
+    const autoAssignPaused = fd.get('autoAssignPaused') === 'on';
     if (hospital) {
       hospital.name = name;
       hospital.defaultQuota = defaultQuota;
@@ -1423,9 +1430,10 @@ function openHospitalForm(hospital) {
       hospital.naverBlogUrl = naverBlogUrl;
       hospital.naverMapUrl = naverMapUrl;
       hospital.cycleStartDay = cycleStartDay;
+      hospital.autoAssignPaused = autoAssignPaused;
     } else {
       db.hospitals.push({
-        id: uuid(), name, defaultQuota, naverId, naverPassword, naverBlogUrl, naverMapUrl, cycleStartDay, createdAt: TODAY_STR,
+        id: uuid(), name, defaultQuota, naverId, naverPassword, naverBlogUrl, naverMapUrl, cycleStartDay, autoAssignPaused, createdAt: TODAY_STR,
       });
     }
     saveData();
@@ -1972,14 +1980,14 @@ function onAppClick(e) {
     case 'auto-assign-mondays': {
       const h = getHospital(state.hospitalId);
       if (h) {
-        if (confirm(`"${h.name}" 병원의 목표 수량(브랜드, 기자단, 영수증)에 맞게 이번 주기의 월요일 마감일을 자동 분배할까요?`)) {
+        if (confirm(`"${h.name}" 병원의 목표 수량(브랜드, 기자단, 영수증)에 맞게 이번달의 월요일 마감일을 자동 분배할까요?`)) {
           autoAssignMondays(h, state.year, state.month);
         }
       }
       break;
     }
     case 'auto-assign-all-mondays': {
-      if (confirm(`모든 병원의 목표 수량을 각 병원의 정산 주기(정산일~다음 정산일)에 맞춰 월요일 마감일로 골고루 자동 배정하시겠습니까?`)) {
+      if (confirm(`모든 병원의 목표 수량을 이번달(달력 월) 기준으로 월요일 마감일에 골고루 자동 배정하시겠습니까? (자동 배정 일시중지된 병원은 제외됩니다)`)) {
         autoAssignAllHospitalsMondays(state.year, state.month);
       }
       break;

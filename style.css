@@ -769,6 +769,24 @@ body.screensaver-active .screensaver-btn { visibility: hidden; }
   .home-calendar-cell { min-height: 158px; }
 }
 
+@media (max-width: 480px) {
+  #app { padding: 12px 10px 60px; }
+  .app-title { font-size: 16px; }
+  .header-actions { gap: 6px; }
+  .header-actions .ghost-btn { padding: 7px 10px; font-size: 12px; }
+
+  .home-calendar-grid { grid-template-columns: repeat(7, minmax(96px, 1fr)); min-width: 672px; }
+  .home-calendar-cell { min-height: 120px; }
+
+  .week-matrix { --week-corner-w: 92px; --week-col-min: 56px; }
+  .week-row-head { font-size: 11px; padding: 8px 6px; }
+  .week-item-dot { width: 8px; height: 8px; }
+
+  .detail-title { font-size: 17px; }
+  .stat-tiles { grid-template-columns: 1fr; }
+  .monthly-hospital-grid { grid-template-columns: 1fr; }
+}
+
 /* ---------- Detail header / month nav ---------- */
 .detail-head {
   display: flex;
@@ -1255,6 +1273,7 @@ body.task-reordering * {
 input[type="date"].cell-input { min-width: 128px; }
 select.cell-input { min-width: 108px; }
 input[type="text"].cell-input { min-width: 140px; }
+input.performance-input { min-width: 130px; }
 
 .cell-dash {
   display: inline-block;
@@ -1439,6 +1458,7 @@ html[data-theme="dark"] .status-select[data-status="보고"] {
   display: flex;
   align-items: center;
   gap: 8px;
+  flex-wrap: wrap;
 }
 .deadline-summary-chip {
   display: inline-flex;
@@ -1450,6 +1470,8 @@ html[data-theme="dark"] .status-select[data-status="보고"] {
   border: 1px solid var(--border);
   font-size: 12px;
   font-weight: 600;
+  white-space: nowrap;
+  flex-shrink: 0;
 }
 /* ---------- 캡처 이미지 톤앤매너 글라스모피즘 & 명암 대비 보드 ---------- */
 .monday-board-section {
@@ -1468,11 +1490,11 @@ html[data-theme="dark"] .status-select[data-status="보고"] {
   display: flex;
   align-items: center;
   justify-content: space-between;
+  flex-wrap: wrap;
   gap: 10px;
   margin-bottom: 12px;
   padding-bottom: 10px;
   border-bottom: 1px solid var(--border);
-  white-space: nowrap;
 }
 
 .monday-board-title {
@@ -1490,7 +1512,7 @@ html[data-theme="dark"] .status-select[data-status="보고"] {
   display: flex;
   align-items: center;
   gap: 8px;
-  white-space: nowrap;
+  flex-wrap: wrap;
 }
 
 .monday-stat-badge {
@@ -1865,6 +1887,31 @@ html[data-theme="dark"] .status-select[data-status="보고"] {
 
 .pw-row { display: flex; gap: 6px; }
 .pw-row input { flex: 1; }
+
+.modal-card label.checkbox-row {
+  flex-direction: row;
+  align-items: center;
+  gap: 8px;
+  cursor: pointer;
+}
+.modal-card label.checkbox-row input[type="checkbox"] {
+  width: 16px;
+  height: 16px;
+  accent-color: var(--series-1);
+  flex: 0 0 auto;
+}
+
+.paused-badge {
+  display: inline-flex;
+  align-items: center;
+  padding: 2px 9px;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--danger) 12%, transparent);
+  color: var(--danger);
+  font-size: 11px;
+  font-weight: 700;
+  white-space: nowrap;
+}
 
 .helper-text {
   font-size: 11px;
