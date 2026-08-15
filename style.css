@@ -1137,6 +1137,8 @@ body.screensaver-active .screensaver-btn { visibility: hidden; }
 .tracker-head-actions {
   display: flex;
   align-items: center;
+  flex-wrap: wrap;
+  justify-content: flex-end;
   gap: 8px;
 }
 

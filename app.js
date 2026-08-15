@@ -1097,7 +1097,8 @@ function renderTrackerSection(hospital, year, month) {
       </div>
       <div class="tracker-head-actions">
         ${state.trackerExpanded ? `<button class="ghost-btn" data-action="toggle-tracker-expand">축소</button>` : ''}
-        <button class="primary-btn" data-action="add-task">+ 작업 추가</button>
+        <button class="ghost-btn" data-action="add-task" data-type="receipt">+ 영수증 리뷰 추가</button>
+        <button class="primary-btn" data-action="add-task" data-type="brandBlog">+ 작업 추가</button>
       </div>
     </div>
     <div class="table-scroll">
@@ -1642,7 +1643,7 @@ function openTagForm(hospitalId, kind, item) {
 
 /* ==================== 이벤트 처리 ==================== */
 
-function handleAddTask() {
+function handleAddTask(type) {
   const hospital = getHospital(state.hospitalId);
   if (!hospital) return;
   const anchor = getCurrentCycleAnchor(hospital, today);
@@ -1654,11 +1655,12 @@ function handleAddTask() {
     const { start } = getCycleRange(hospital, state.year, state.month);
     deadline = fmtDateStr(start);
   }
+  const isReceipt = type === 'receipt';
   db.tasks.push({
     id: uuid(),
     hospitalId: state.hospitalId,
-    type: 'brandBlog',
-    keyword: '',
+    type: TYPE_KEYS.includes(type) ? type : 'brandBlog',
+    keyword: isReceipt ? null : '',
     keywordVolume: null,
     keywordDocs: null,
     keywordGap: null,
@@ -2032,7 +2034,7 @@ function onAppClick(e) {
       break;
     }
     case 'add-task':
-      handleAddTask();
+      handleAddTask(el.dataset.type || 'brandBlog');
       break;
     case 'toggle-tracker-expand':
       state.trackerExpanded = !state.trackerExpanded;
