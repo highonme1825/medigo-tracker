@@ -1852,6 +1852,10 @@ function attachTaskReordering(tbody) {
 
   tbody.addEventListener('pointerdown', (e) => {
     if (e.pointerType === 'mouse' && e.button !== 0) return;
+    // 삭제 버튼이나 입력/선택 요소를 누르는 건 줄 옮기기 제스처 대상에서 제외한다.
+    // (안 그러면 삭제 버튼을 살짝 오래 누르기만 해도 롱프레스로 오인되어 드래그
+    //  모드에 들어가고, 그 다음 클릭이 "삭제" 핸들러까지 가지 못하고 씹혔다)
+    if (e.target.closest('button, input, select, a')) return;
     const row = e.target.closest('tr[data-task-id]');
     if (!row) return;
     pressedRow = row;
