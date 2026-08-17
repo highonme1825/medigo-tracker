@@ -1112,6 +1112,12 @@ function renderTrackerSection(hospital, year, month) {
       const bSaved = b.savedPosition !== undefined;
       if (aSaved && bSaved) return a.savedPosition - b.savedPosition;
       if (aSaved !== bSaved) return aSaved ? -1 : 1;
+      // 저장된 순서가 없는 새 작업들은 만든 순서가 아니라 마감일 순서로 보여준다.
+      // (그렇지 않으면 교차 배정처럼 "타입별로 주차를 번갈아 채우는" 기능을 써도,
+      // 같은 타입끼리 먼저 몰아 생성되다보니 표에서는 여전히 타입별로 뭉쳐 보였다)
+      const aDeadline = a.task.deadline || '';
+      const bDeadline = b.task.deadline || '';
+      if (aDeadline !== bDeadline) return aDeadline.localeCompare(bDeadline);
       const aCreated = typeof a.task.createdAt === 'number' ? a.task.createdAt : Number.NEGATIVE_INFINITY;
       const bCreated = typeof b.task.createdAt === 'number' ? b.task.createdAt : Number.NEGATIVE_INFINITY;
       return aCreated - bCreated || a.index - b.index;
