@@ -186,6 +186,13 @@ function isPublishedStatus(status) {
   return status === '발행' || status === '발행완료' || status === '보고 완료' || status === '보고';
 }
 
+// 마감 보드에서 "색이 칠해질(=진행 중 이상)" 상태로 볼 것들.
+// 할당량 완료 집계(isPublishedStatus)와는 다르게, 예약 발행/요청 완료처럼
+// 실제 발행 전이라도 이미 손이 간 상태는 보드에서 시각적으로 구분되게 한다.
+function isBoardActiveStatus(status) {
+  return status === '예약 발행' || status === '예약발행' || status === '요청 완료' || status === '요청완료' || isPublishedStatus(status);
+}
+
 const INITIAL_HOSPITALS = [
   { id: 'h-gangnam', name: '강남마디튼튼의원', defaultQuota: { brandBlog: 2, press: 2, receipt: 4 }, cycleStartDay: 1, naverId: '', naverPassword: '', naverBlogUrl: '', naverMapUrl: '' },
   { id: 'h-junghankyo', name: '정한교피부과의원', defaultQuota: { brandBlog: 5, press: 6, receipt: 4 }, cycleStartDay: 1, naverId: '', naverPassword: '', naverBlogUrl: '', naverMapUrl: '' },
@@ -411,6 +418,7 @@ let state = {
   weeklyOffset: 0,     // 0 = 이번주, -1 = 지난주, 1 = 다음주
   pwVisible: false,
   trackerExpanded: false,
+  trackerSortMode: 'deadline', // 'deadline' | 'type'
 };
 
 function getMondaysInMonth(year, month) {
@@ -583,7 +591,7 @@ function renderMondayBoard() {
   });
 
   const totalTasks = monthMondayTasks.length;
-  const completedTasks = monthMondayTasks.filter((t) => isPublishedStatus(t.status)).length;
+  const completedTasks = monthMondayTasks.filter((t) => isBoardActiveStatus(t.status)).length;
   const pendingTasks = totalTasks - completedTasks;
 
   const isCurrentMonth = year === today.getFullYear() && month === (today.getMonth() + 1);
@@ -612,20 +620,20 @@ function renderMondayBoard() {
       if (hospitalTasks.length === 0) {
         return `<div class="week-cell is-empty ${isToday ? 'is-today-col' : ''}">–</div>`;
       }
-      const doneCount = hospitalTasks.filter((t) => isPublishedStatus(t.status)).length;
+      const doneCount = hospitalTasks.filter((t) => isBoardActiveStatus(t.status)).length;
       const allDone = doneCount === hospitalTasks.length;
       const groupsHtml = TYPE_KEYS.map((type) => {
         const typeTasks = hospitalTasks.filter((t) => t.type === type);
         if (typeTasks.length === 0) return '';
         const meta = TYPE_META[type];
         const dotsHtml = typeTasks.map((t) => {
-          const done = isPublishedStatus(t.status);
+          const done = isBoardActiveStatus(t.status);
           return `<span class="week-item-dot ${done ? 'is-done' : ''}" style="--dot-color:${meta.color}" title="${esc(meta.label)} · ${esc(t.status)}"></span>`;
         }).join('');
         return `<span class="week-item-group">${dotsHtml}</span>`;
       }).join('');
       return `
-      <div class="week-cell ${allDone ? 'is-complete' : ''} ${isToday ? 'is-today-col' : ''}" data-action="open-hospital" data-id="${hospital.id}" data-date="${dateStr}" title="${esc(hospital.name)} 상세보기 · ${doneCount}/${hospitalTasks.length}건 완료">
+      <div class="week-cell ${allDone ? 'is-complete' : ''} ${isToday ? 'is-today-col' : ''}" data-action="open-hospital" data-id="${hospital.id}" data-date="${dateStr}" title="${esc(hospital.name)} 상세보기 · ${doneCount}/${hospitalTasks.length}건 진행/완료">
         ${groupsHtml}
       </div>`;
     }).join('');
@@ -1102,22 +1110,35 @@ function renderTaskRow(task) {
   </tr>`;
 }
 
+const TRACKER_TYPE_ORDER = { brandBlog: 0, press: 1, receipt: 2 };
+
 function renderTrackerSection(hospital, year, month) {
   const savedOrder = taskOrder[`${hospital.id}::${monthKey(year, month)}`] || [];
   const savedPositions = new Map(savedOrder.map((id, index) => [id, index]));
+  const sortMode = state.trackerSortMode === 'type' ? 'type' : 'deadline';
   const tasks = getTasksForCycle(hospital, year, month)
     .map((task, index) => ({ task, index, savedPosition: savedPositions.get(task.id) }))
     .sort((a, b) => {
+      // 정렬 기준(마감일 또는 발행 종류)이 우선이고, 같은 그룹 안에서는
+      // 수동으로 끌어서 정한 순서 > 마감일/생성 순으로 세부 정렬한다.
+      if (sortMode === 'type') {
+        const aType = TRACKER_TYPE_ORDER[a.task.type] ?? 99;
+        const bType = TRACKER_TYPE_ORDER[b.task.type] ?? 99;
+        if (aType !== bType) return aType - bType;
+      } else {
+        const aDeadline = a.task.deadline || '';
+        const bDeadline = b.task.deadline || '';
+        if (aDeadline !== bDeadline) return aDeadline.localeCompare(bDeadline);
+      }
       const aSaved = a.savedPosition !== undefined;
       const bSaved = b.savedPosition !== undefined;
       if (aSaved && bSaved) return a.savedPosition - b.savedPosition;
       if (aSaved !== bSaved) return aSaved ? -1 : 1;
-      // 저장된 순서가 없는 새 작업들은 만든 순서가 아니라 마감일 순서로 보여준다.
-      // (그렇지 않으면 교차 배정처럼 "타입별로 주차를 번갈아 채우는" 기능을 써도,
-      // 같은 타입끼리 먼저 몰아 생성되다보니 표에서는 여전히 타입별로 뭉쳐 보였다)
-      const aDeadline = a.task.deadline || '';
-      const bDeadline = b.task.deadline || '';
-      if (aDeadline !== bDeadline) return aDeadline.localeCompare(bDeadline);
+      if (sortMode === 'type') {
+        const aDeadline = a.task.deadline || '';
+        const bDeadline = b.task.deadline || '';
+        if (aDeadline !== bDeadline) return aDeadline.localeCompare(bDeadline);
+      }
       const aCreated = typeof a.task.createdAt === 'number' ? a.task.createdAt : Number.NEGATIVE_INFINITY;
       const bCreated = typeof b.task.createdAt === 'number' ? b.task.createdAt : Number.NEGATIVE_INFINITY;
       return aCreated - bCreated || a.index - b.index;
@@ -1132,6 +1153,10 @@ function renderTrackerSection(hospital, year, month) {
         <span class="tracker-expand-icon" aria-hidden="true">${state.trackerExpanded ? '↙' : '↗'}</span>
       </div>
       <div class="tracker-head-actions">
+        <select id="trackerSortSelect" class="ghost-btn sort-select" data-action="noop" title="정렬 기준">
+          <option value="deadline" ${sortMode === 'deadline' ? 'selected' : ''}>마감일순</option>
+          <option value="type" ${sortMode === 'type' ? 'selected' : ''}>발행종류순</option>
+        </select>
         ${state.trackerExpanded ? `<button class="ghost-btn" data-action="toggle-tracker-expand">축소</button>` : ''}
         <button class="ghost-btn" data-action="add-task" data-type="receipt">+ 영수증 리뷰 추가</button>
         <button class="primary-btn" data-action="add-task" data-type="brandBlog">+ 작업 추가</button>
@@ -1832,6 +1857,14 @@ function attachListeners() {
     tbody.addEventListener('change', handleTrackerChange);
     tbody.addEventListener('click', handleTrackerClick);
     attachTaskReordering(tbody);
+  }
+  const sortSelect = document.getElementById('trackerSortSelect');
+  if (sortSelect) {
+    sortSelect.addEventListener('click', (e) => e.stopPropagation());
+    sortSelect.addEventListener('change', (e) => {
+      state.trackerSortMode = e.target.value === 'type' ? 'type' : 'deadline';
+      render();
+    });
   }
 }
 

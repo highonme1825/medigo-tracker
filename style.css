@@ -399,6 +399,11 @@ body.screensaver-active .screensaver-btn { visibility: hidden; }
 }
 .ghost-btn:hover { background: var(--surface-hover); color: var(--text-primary); border-color: var(--baseline); }
 
+.sort-select {
+  appearance: auto;
+  -webkit-appearance: menulist;
+}
+
 .danger-text-btn {
   color: var(--danger, #ef4444);
 }
